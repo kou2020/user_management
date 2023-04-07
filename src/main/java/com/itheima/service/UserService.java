@@ -1,10 +1,22 @@
 package com.itheima.service;
 
 
+import cn.afterturn.easypoi.csv.CsvExportUtil;
+import cn.afterturn.easypoi.csv.entity.CsvExportParams;
+import cn.afterturn.easypoi.entity.ImageEntity;
+import cn.afterturn.easypoi.excel.ExcelExportUtil;
+import cn.afterturn.easypoi.excel.ExcelImportUtil;
+import cn.afterturn.easypoi.excel.entity.ExportParams;
+import cn.afterturn.easypoi.excel.entity.ImportParams;
+import cn.afterturn.easypoi.excel.entity.TemplateExportParams;
+import cn.afterturn.easypoi.excel.entity.enmus.ExcelType;
 import com.github.pagehelper.Page;
 import com.github.pagehelper.PageHelper;
+import com.itheima.mapper.ResourceMapper;
 import com.itheima.mapper.UserMapper;
+import com.itheima.pojo.Resource;
 import com.itheima.pojo.User;
+import com.itheima.utils.EntityUtils;
 import com.itheima.utils.ExcelExportEngine;
 import com.opencsv.CSVWriter;
 import jxl.Workbook;
@@ -14,9 +26,12 @@ import jxl.write.WritableWorkbook;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.util.Units;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFClientAnchor;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xwpf.usermodel.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -29,10 +44,13 @@ import javax.servlet.http.HttpServletResponse;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.OutputStreamWriter;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 //import jxl.Workbook;
 //import org.apache.poi.ss.usermodel.Workbook;
@@ -43,6 +61,9 @@ public class UserService {
 
     @Autowired
     private UserMapper userMapper;
+
+    @Autowired
+    private ResourceMapper resourceMapper;
 
     private SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd");
 
@@ -484,5 +505,222 @@ public class UserService {
         //关闭资源
         workbook.close();
         outputStream.close();
+    }
+
+    /**
+     * 百万数据导出
+     * 1.肯定使用的是高版本的Excel
+     * 2.使用sax方式解析Excel(xml)
+     * 3.限制:1.不能使用模板,2.不能使用太多的样式
+     *
+     * @param response
+     */
+    public void downLoadMillion(HttpServletResponse response) throws Exception {
+//        指定使用的是sax方式解析
+        SXSSFWorkbook workbook = new SXSSFWorkbook();  //sax方式就是逐行解析
+//        Workbook workbook = new XSSFWorkbook(); //dom4j的方式
+//        导出500W条数据 不可能放到同一个sheet中 规定：每个sheet不能超过100W条数据
+        int page = 1;
+        int num = 0;// 记录了处理数据的个数
+        int rowIndex = 1; //记录的是每个sheet的行索引
+        Row row = null;
+        Sheet sheet = null;
+        while (true) {
+            List<User> userList = this.findPage(page, 100000);
+            if (CollectionUtils.isEmpty(userList)) {
+                break; //用户数据为空 跳出循环
+            }
+//           0   1000000  2000000  3000000  4000000  5000000
+            if (num % 1000000 == 0) {  //表示应该创建新的标题
+                sheet = workbook.createSheet("第" + ((num / 1000000) + 1) + "个工作表");
+                rowIndex = 1; //每个sheet中的行索引重置
+//            设置小标题
+//            编号	姓名	手机号	入职日期	现住址
+                String[] titles = new String[]{"编号", "姓名", "手机号", "入职日期", "现住址"};
+                Row titleRow = sheet.createRow(0);
+                for (int i = 0; i < 5; i++) {
+                    titleRow.createCell(i).setCellValue(titles[i]);
+                }
+            }
+            for (User user : userList) {
+                row = sheet.createRow(rowIndex);
+                row.createCell(0).setCellValue(user.getId());
+                row.createCell(1).setCellValue(user.getUserName());
+                row.createCell(2).setCellValue(user.getPhone());
+                row.createCell(3).setCellValue(simpleDateFormat.format(user.getHireDate()));
+                row.createCell(4).setCellValue(user.getAddress());
+
+                rowIndex++;
+                num++;
+            }
+            page++; //当前页码加1
+        }
+
+        String filename = "百万用户数据的导出.xlsx";
+        response.setHeader("content-disposition", "attachment;filename=" + new String(filename.getBytes(), "ISO8859-1"));
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        workbook.write(response.getOutputStream());
+    }
+
+    public User findById(Long id) {
+        //根据id查询用户，并且用户中附带公共用品数据
+        User user = userMapper.selectByPrimaryKey(id);
+        //再查询办公用品数据
+        Resource resource = new Resource();
+        resource.setUserId(id);
+        List<Resource> resourceList = resourceMapper.select(resource);
+        user.setResourceList(resourceList);
+        return user;
+    }
+
+    //下载用户的合同文档
+    public void downloadContract(Long id, HttpServletResponse response) throws Exception {
+        //1、读取到模板
+        File rootFile = new File(ResourceUtils.getURL("classpath:").getPath()); //获取项目的根目录
+        File templateFile = new File(rootFile, "/word_template/contract_template.docx");
+        XWPFDocument word = new XWPFDocument(new FileInputStream(templateFile));
+        //2、查询当前用户User--->map
+        User user = this.findById(id);
+        Map<String, String> params = new HashMap<>();
+        params.put("userName", user.getUserName());
+        params.put("hireDate", simpleDateFormat.format(user.getHireDate()));
+        params.put("address", user.getAddress());
+        //3、替换数据
+        //处理正文开始
+        List<XWPFParagraph> paragraphs = word.getParagraphs();
+        for (XWPFParagraph paragraph : paragraphs) {
+            List<XWPFRun> runs = paragraph.getRuns();
+            for (XWPFRun run : runs) {
+                String text = run.getText(0);
+                for (String key : params.keySet()) {
+                    if (text.contains(key)) {
+                        run.setText(text.replaceAll(key, params.get(key)), 0);
+                    }
+                }
+            }
+        }
+//         处理正文结束
+
+//      处理表格开始     名称	价值	是否需要归还	照片
+        List<Resource> resourceList = user.getResourceList(); //表格中需要的数据
+        XWPFTable xwpfTable = word.getTables().get(0);
+
+        XWPFTableRow row = xwpfTable.getRow(0);
+        int rowIndex = 1;
+        for (Resource resource : resourceList) {
+            //        添加行
+//            xwpfTable.addRow(row);
+            copyRow(xwpfTable, row, rowIndex);
+            XWPFTableRow row1 = xwpfTable.getRow(rowIndex);
+            row1.getCell(0).setText(resource.getName());
+            row1.getCell(1).setText(resource.getPrice().toString());
+            row1.getCell(2).setText(resource.getNeedReturn() ? "需求" : "不需要");
+
+            File imageFile = new File(rootFile, "/static" + resource.getPhoto());
+            setCellImage(row1.getCell(3), imageFile);
+            rowIndex++;
+        }
+//     处理表格开始结束
+//        4、导出word
+        String filename = "员工(" + user.getUserName() + ")合同.docx";
+        response.setHeader("content-disposition", "attachment;filename=" + new String(filename.getBytes(), "ISO8859-1"));
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        word.write(response.getOutputStream());
+    }
+
+    //    向单元格中写入图片
+    private void setCellImage(XWPFTableCell cell, File imageFile) {
+
+        XWPFRun run = cell.getParagraphs().get(0).createRun();
+//        InputStream pictureData, int pictureType, String filename, int width, int height
+        try (FileInputStream inputStream = new FileInputStream(imageFile)) {
+            run.addPicture(inputStream, XWPFDocument.PICTURE_TYPE_JPEG, imageFile.getName(), Units.toEMU(100), Units.toEMU(50));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    //    用于深克隆行
+    private void copyRow(XWPFTable xwpfTable, XWPFTableRow sourceRow, int rowIndex) {
+        XWPFTableRow targetRow = xwpfTable.insertNewTableRow(rowIndex);
+        targetRow.getCtRow().setTrPr(sourceRow.getCtRow().getTrPr());
+//        获取源行的单元格
+        List<XWPFTableCell> cells = sourceRow.getTableCells();
+        if (CollectionUtils.isEmpty(cells)) {
+            return;
+        }
+        XWPFTableCell targetCell = null;
+        for (XWPFTableCell cell : cells) {
+            targetCell = targetRow.addNewTableCell();
+//            附上单元格的样式
+//            单元格的属性
+            targetCell.getCTTc().setTcPr(cell.getCTTc().getTcPr());
+            targetCell.getParagraphs().get(0).getCTP().setPPr(cell.getParagraphs().get(0).getCTP().getPPr());
+        }
+    }
+
+    /**
+     * 使用EasyPOI方式导出Excel
+     *
+     * @param response
+     */
+    public void downLoadWithEasyPOI(HttpServletResponse response) throws Exception {
+        ExportParams exportParams = new ExportParams("员工信息列表", "数据", ExcelType.XSSF);
+        List<User> userList = userMapper.selectAll();
+        org.apache.poi.ss.usermodel.Workbook workbook = ExcelExportUtil.exportExcel(exportParams, User.class, userList);
+        String filename = "用户数据的导出.xlsx";
+        response.setHeader("content-disposition", "attachment;filename=" + new String(filename.getBytes(), "ISO8859-1"));
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        workbook.write(response.getOutputStream());
+    }
+
+    public void uploadExcelWithEasyPOI(MultipartFile file) throws Exception {
+        ImportParams importParams = new ImportParams();
+        importParams.setNeedSave(false);
+        importParams.setTitleRows(1);
+        importParams.setHeadRows(1);
+        List<User> userList = ExcelImportUtil.importExcel(file.getInputStream(), User.class, importParams);
+        for (User user : userList) {
+            user.setId(null);
+            userMapper.insert(user);
+        }
+
+    }
+
+    public void downloadUserInfoByEasyPOI(Long id, HttpServletResponse response) throws Exception {
+        File rootFile = new File(ResourceUtils.getURL("classpath:").getPath()); //获取项目的根目录
+        File templateFile = new File(rootFile, "/excel_template/userInfo3.xlsx");
+//        Workbook workbook = new XSSFWorkbook(templateFile);
+        TemplateExportParams exportParams = new TemplateExportParams(templateFile.getPath(), true);
+
+        User user = userMapper.selectByPrimaryKey(id);
+        Map<String, Object> map = EntityUtils.entityToMap(user);
+        ImageEntity imageEntity = new ImageEntity();
+        imageEntity.setUrl(user.getPhoto());
+        imageEntity.setColspan(2); //占用多少列
+        imageEntity.setRowspan(4); //占用多少行
+
+        map.put("photo", imageEntity);
+        org.apache.poi.ss.usermodel.Workbook workbook = ExcelExportUtil.exportExcel(exportParams, map);
+
+        String filename = "用户数据.xlsx";
+        response.setHeader("content-disposition", "attachment;filename=" + new String(filename.getBytes(), "ISO8859-1"));
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        workbook.write(response.getOutputStream());
+    }
+
+    public void downLoadCSVWithEasyPOI(HttpServletResponse response) throws Exception {
+        ServletOutputStream outputStream = response.getOutputStream();
+        String filename = "百万用户数据的导出.csv";
+        response.setHeader("content-disposition", "attachment;filename=" + new String(filename.getBytes(), "ISO8859-1"));
+        response.setContentType("text/csv");
+
+        CsvExportParams csvExportParams = new CsvExportParams();
+        csvExportParams.setExclusions(new String[]{"照片"});
+
+        List<User> userList = userMapper.selectAll();
+        CsvExportUtil.exportCsv(csvExportParams, User.class, userList, outputStream);
+
     }
 }

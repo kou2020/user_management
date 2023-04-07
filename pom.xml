@@ -65,6 +65,7 @@
             <version>2.6.12</version>
         </dependency>
 
+<!--
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi</artifactId>
@@ -82,7 +83,22 @@
             <artifactId>poi-ooxml-schemas</artifactId>
             <version>4.0.1</version>
         </dependency>
-
+ -->
+        <dependency>
+            <groupId>cn.afterturn</groupId>
+            <artifactId>easypoi-base</artifactId>
+            <version>4.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>cn.afterturn</groupId>
+            <artifactId>easypoi-web</artifactId>
+            <version>4.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>cn.afterturn</groupId>
+            <artifactId>easypoi-annotation</artifactId>
+            <version>4.1.0</version>
+        </dependency>
 
         <dependency>
             <groupId>org.apache.commons</groupId>
@@ -98,7 +114,7 @@
         <dependency>
             <groupId>com.jacob</groupId>
             <artifactId>jacob</artifactId>
-            <version>1.9</version>
+            <version>1.19</version>
         </dependency>
 
         <dependency>
