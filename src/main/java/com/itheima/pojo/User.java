@@ -2,11 +2,13 @@ package com.itheima.pojo;
 
 import cn.afterturn.easypoi.excel.annotation.Excel;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 import tk.mybatis.mapper.annotation.KeySql;
 
 import javax.persistence.Id;
 import javax.persistence.Table;
+import javax.persistence.Transient;
 import java.util.Date;
 import java.util.List;
 
@@ -34,6 +36,9 @@ public class User {
     @Excel(name = "入职日期", orderNum = "6", width = 10, format = "yyyy-MM-dd", isImportField = "true")
     @JsonFormat(pattern = "yyyy-MM-dd")
     private Date hireDate; // 入职日期
+    @JsonIgnore //转json时不考虑这个字段
+    @Transient  //这个字段不需要和表对应
+    private String hireDateStr;
     private String deptId;   //部门id
     @Excel(name = "出生日期", orderNum = "7", width = 10, format = "yyyy-MM-dd", isImportField = "true")
     private Date birthday; //出生日期

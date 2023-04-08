@@ -19,11 +19,16 @@ import com.itheima.pojo.User;
 import com.itheima.utils.EntityUtils;
 import com.itheima.utils.ExcelExportEngine;
 import com.opencsv.CSVWriter;
+import com.zaxxer.hikari.HikariDataSource;
 import jxl.Workbook;
 import jxl.write.Label;
 import jxl.write.WritableSheet;
 import jxl.write.WritableWorkbook;
 import lombok.extern.slf4j.Slf4j;
+import net.sf.jasperreports.engine.JasperExportManager;
+import net.sf.jasperreports.engine.JasperFillManager;
+import net.sf.jasperreports.engine.JasperPrint;
+import net.sf.jasperreports.engine.data.JRBeanCollectionDataSource;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.util.Units;
@@ -51,6 +56,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 //import jxl.Workbook;
 //import org.apache.poi.ss.usermodel.Workbook;
@@ -64,6 +70,9 @@ public class UserService {
 
     @Autowired
     private ResourceMapper resourceMapper;
+
+    @Autowired
+    private HikariDataSource hikariDataSource;
 
     private SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd");
 
@@ -723,4 +732,52 @@ public class UserService {
         CsvExportUtil.exportCsv(csvExportParams, User.class, userList, outputStream);
 
     }
+
+    public void downLoadPDF(HttpServletResponse response) throws Exception {
+        //1.获取模本文件
+        File rootFile = new File(ResourceUtils.getURL("classpath:").getPath()); //获取项目的根目录
+        File templateFile = new File(rootFile, "/pdf_template/userList_db.jasper");
+        //2.准备数据库的连接
+        FileInputStream inputStream = new FileInputStream(templateFile);
+        Map params = new HashMap();
+        //JasperPrint jasperPrint = JasperFillManager.fillReport(inputStream, params, getCon());
+        JasperPrint jasperPrint = JasperFillManager.fillReport(inputStream, params, hikariDataSource.getConnection());
+        ServletOutputStream outputStream = response.getOutputStream();
+        String filename = "用户列表数据.pdf";
+        response.setHeader("content-disposition", "attachment;filename=" + new String(filename.getBytes(), "ISO8859-1"));
+        response.setContentType("application/pdf");
+        JasperExportManager.exportReportToPdfStream(jasperPrint, outputStream);
+    }
+
+    public void downLoadPDF2(HttpServletResponse response) throws Exception {
+        //1.获取模本文件
+        File rootFile = new File(ResourceUtils.getURL("classpath:").getPath()); //获取项目的根目录
+        File templateFile = new File(rootFile, "/pdf_template/userList.jasper");
+        //2.准备显示数据
+        FileInputStream inputStream = new FileInputStream(templateFile);
+        List<User> userList = userMapper.selectAll();
+
+        userList = userList.stream().map((user) -> {
+            Date hireDate = user.getHireDate();
+            String formatHireDate = simpleDateFormat.format(hireDate);
+            user.setHireDateStr(formatHireDate);
+            return user;
+        }).collect(Collectors.toList());
+
+        JRBeanCollectionDataSource jrBeanCollectionDataSource = new JRBeanCollectionDataSource(userList);
+        Map params = new HashMap();
+        JasperPrint jasperPrint = JasperFillManager.fillReport(inputStream, params, jrBeanCollectionDataSource);
+        ServletOutputStream outputStream = response.getOutputStream();
+        String filename = "用户列表数据.pdf";
+        response.setHeader("content-disposition", "attachment;filename=" + new String(filename.getBytes(), "ISO8859-1"));
+        response.setContentType("application/pdf");
+        JasperExportManager.exportReportToPdfStream(jasperPrint, outputStream);
+    }
+/*
+    private Connection getCon() throws Exception {
+        Class.forName("com.mysql.jdbc.Driver");
+        Connection connection = DriverManager.getConnection("jdbc:mysql://localhost:13306/report_manager_db", "root", "root");
+        return connection;
+    }
+*/
 }

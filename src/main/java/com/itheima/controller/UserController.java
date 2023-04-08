@@ -73,4 +73,10 @@ public class UserController {
     public void downLoadWithEasyPOI(HttpServletResponse response) throws Exception {
         userService.downLoadWithEasyPOI(response);
     }
+
+    @GetMapping(value = "/downLoadPDF", name = "导出用户数据到PDF")
+    public void downLoadPDF(HttpServletResponse response) throws Exception {
+        //userService.downLoadPDF(response);
+        userService.downLoadPDF2(response);
+    }
 }
