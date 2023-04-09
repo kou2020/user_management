@@ -45,7 +45,8 @@ public class UserController {
     public void downloadUserInfoByTemplate(Long id, HttpServletResponse response) throws Exception {
         //userService.downloadUserInfoByTemplate(id,response);
         //userService.downloadUserInfoByTemplate2(id, response);
-        userService.downloadUserInfoByEasyPOI(id,response);
+        //userService.downloadUserInfoByEasyPOI(id,response);
+        userService.downloadUserInfoByPDF(id,response);
     }
 
     @GetMapping(value = "/downLoadMillion", name = "导出百万数据")

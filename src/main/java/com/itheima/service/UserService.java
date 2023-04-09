@@ -25,6 +25,7 @@ import jxl.write.Label;
 import jxl.write.WritableSheet;
 import jxl.write.WritableWorkbook;
 import lombok.extern.slf4j.Slf4j;
+import net.sf.jasperreports.engine.JREmptyDataSource;
 import net.sf.jasperreports.engine.JasperExportManager;
 import net.sf.jasperreports.engine.JasperFillManager;
 import net.sf.jasperreports.engine.JasperPrint;
@@ -42,15 +43,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.ResourceUtils;
 import org.springframework.web.multipart.MultipartFile;
+import tk.mybatis.mapper.entity.Example;
 
 import javax.imageio.ImageIO;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServletResponse;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.OutputStreamWriter;
+import java.io.*;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
@@ -752,11 +751,14 @@ public class UserService {
     public void downLoadPDF2(HttpServletResponse response) throws Exception {
         //1.获取模本文件
         File rootFile = new File(ResourceUtils.getURL("classpath:").getPath()); //获取项目的根目录
-        File templateFile = new File(rootFile, "/pdf_template/userList.jasper");
+        //File templateFile = new File(rootFile, "/pdf_template/userList.jasper");
+        File templateFile = new File(rootFile, "/pdf_template/userList2.jasper");
         //2.准备显示数据
         FileInputStream inputStream = new FileInputStream(templateFile);
-        List<User> userList = userMapper.selectAll();
-
+        //List<User> userList = userMapper.selectAll();
+        Example example = new Example(User.class);
+        example.setOrderByClause("province");
+        List<User> userList = userMapper.selectByExample(example);
         userList = userList.stream().map((user) -> {
             Date hireDate = user.getHireDate();
             String formatHireDate = simpleDateFormat.format(hireDate);
@@ -769,6 +771,27 @@ public class UserService {
         JasperPrint jasperPrint = JasperFillManager.fillReport(inputStream, params, jrBeanCollectionDataSource);
         ServletOutputStream outputStream = response.getOutputStream();
         String filename = "用户列表数据.pdf";
+        response.setHeader("content-disposition", "attachment;filename=" + new String(filename.getBytes(), "ISO8859-1"));
+        response.setContentType("application/pdf");
+        JasperExportManager.exportReportToPdfStream(jasperPrint, outputStream);
+    }
+
+    public void downloadUserInfoByPDF(Long id, HttpServletResponse response) throws Exception {
+        //1.获取模本文件
+        File rootFile = new File(ResourceUtils.getURL("classpath:").getPath()); //获取项目的根目录
+        File templateFile = new File(rootFile, "/pdf_template/userInfo.jasper");
+        //2.准备显示数据
+        FileInputStream inputStream = new FileInputStream(templateFile);
+        User user = userMapper.selectByPrimaryKey(id);
+        Map<String, Object> params = new HashMap();
+        params.put("userName", user.getUserName());
+        params.put("phone", user.getPhone());
+        params.put("birthday", simpleDateFormat.format(user.getBirthday()));
+        params.put("salary", user.getSalary().toString());
+        params.put("photo", rootFile.getPath() + user.getPhoto());
+        JasperPrint jasperPrint = JasperFillManager.fillReport(inputStream, params, new JREmptyDataSource());
+        ServletOutputStream outputStream = response.getOutputStream();
+        String filename = "用户数据.pdf";
         response.setHeader("content-disposition", "attachment;filename=" + new String(filename.getBytes(), "ISO8859-1"));
         response.setContentType("application/pdf");
         JasperExportManager.exportReportToPdfStream(jasperPrint, outputStream);
